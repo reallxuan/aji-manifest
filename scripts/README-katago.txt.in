@@ -1,0 +1,14 @@
+KataGo @TAG@ for macOS (Apple silicon, Metal backend)
+
+This is an unmodified build of KataGo @TAG@, made from the source at
+https://github.com/lightvector/KataGo (tag @TAG@) by the
+reallxuan/aji-manifest repository (https://github.com/reallxuan/aji-manifest)
+for the Aji KataGo GUI.
+
+The build uses KataGo's Metal backend. It statically links protobuf @PROTOBUF_TAG@
+and abseil @ABSEIL_TAG@, so it runs without Homebrew, and it includes the
+components KataGo vendors in cpp/external. libzip is not included.
+
+KataGo is distributed under its own licence, in the file LICENSE next to this
+note. The licence texts of protobuf, abseil and the other included components
+are in THIRD-PARTY-LICENSES.txt.
