@@ -1,0 +1,74 @@
+name: Publish manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      aji_ref:
+        description: Ref of reallxuan/Aji to build the manifest tool from
+        required: true
+        default: main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: reallxuan/Aji
+          ref: ${{ inputs.aji_ref }}
+          path: aji
+
+      - name: Install the Rust toolchain
+        working-directory: aji
+        run: rustup toolchain install
+
+      - name: Build the manifest tool
+        working-directory: aji
+        run: cargo build --release -p aji-manifest-tool
+
+      - name: Generate the manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: aji/target/release/aji-manifest generate --out site/v1/manifest.json
+
+      - name: Install minisign
+        run: sudo apt-get install -y minisign
+
+      - name: Sign the manifest
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          umask 077
+          KEY=$(mktemp)
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$KEY"
+          SEQUENCE=$(jq -r .sequence site/v1/manifest.json)
+          minisign -S -s "$KEY" -m site/v1/manifest.json -x site/v1/manifest.json.minisig \
+            -t "aji-manifest sequence $SEQUENCE"
+
+      - name: Verify the signature
+        run: |
+          aji/target/release/aji-manifest verify \
+            --manifest site/v1/manifest.json \
+            --signature site/v1/manifest.json.minisig \
+            --public-key keys/aji-manifest.pub
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

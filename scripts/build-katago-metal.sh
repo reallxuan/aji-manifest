@@ -14,14 +14,45 @@
 # Dependency versions: abseil 20260817.0 and protobuf v36.2, the versions
 # Homebrew built against. Both tags exist upstream, so no substitute is used.
 #
-# Requirements: Command Line Tools (Swift >= 5.9), cmake, ninja, pkg-config.
+# Requirements: an arm64 Mac, Command Line Tools (Swift >= 5.9, codesign, vtool),
+# cmake, ninja, pkg-config, git and zip. The script checks these up front and
+# checks the finished binary before packaging it.
 set -euo pipefail
+
+check_host() {
+  [[ $(uname -m) == arm64 ]] || { echo "error: needs an arm64 Mac, found $(uname -m)" >&2; return 1; }
+  local tool
+  for tool in cmake ninja pkg-config git zip codesign; do
+    command -v "$tool" > /dev/null || { echo "error: $tool is not on PATH" >&2; return 1; }
+  done
+}
+
+# Fail unless the binary links only system libraries and targets macOS 13.0.
+check_binary() {
+  local bin=$1 bad
+  bad=$(otool -L "$bin" | tail -n +2 | awk '{print $1}' | grep -v -e '^/usr/lib/' -e '^/System/Library/' || true)
+  if [[ -n $bad ]]; then
+    echo "error: $bin links libraries outside /usr/lib and /System/Library:" >&2
+    echo "$bad" >&2
+    return 1
+  fi
+  vtool -show-build "$bin" | grep -q 'minos 13\.0$' || {
+    echo "error: $bin does not report minos 13.0" >&2
+    return 1
+  }
+}
+
+# Sourcing the script only defines the functions above.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
+
 
 TAG=${1:?usage: build-katago-metal.sh <katago-tag> <out-dir>}
 OUT=${2:?usage: build-katago-metal.sh <katago-tag> <out-dir>}
 ABSEIL_TAG=20260817.0
 PROTOBUF_TAG=v36.2
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+check_host
 
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -64,6 +95,7 @@ cmake --build "$WORK/katago-build"
 
 KATAGO=$WORK/katago-build/katago
 codesign --force --sign - --timestamp=none "$KATAGO"
+check_binary "$KATAGO"
 
 # package
 STAGE=$WORK/stage

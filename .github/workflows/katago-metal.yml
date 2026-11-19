@@ -1,0 +1,65 @@
+name: KataGo Metal build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: KataGo release tag to build
+        required: true
+        default: v1.18.2
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install cmake ninja pkgconf || brew upgrade cmake ninja pkgconf || true
+
+      - name: Refuse to overwrite an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9][0-9A-Za-z._-]*$ ]]; then
+            echo "error: '$TAG' does not look like a KataGo tag" >&2
+            exit 1
+          fi
+          if gh release view "katago-$TAG-metal" > /dev/null 2>&1; then
+            echo "error: release katago-$TAG-metal already exists; delete it first" >&2
+            exit 1
+          fi
+
+      - name: Build KataGo
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: scripts/build-katago-metal.sh "$TAG" out | tee build.log
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          SHA=$(tail -n 1 build.log | sed -n 's/^sha256 \([0-9a-f]\{64\}\)$/\1/p')
+          if [ -z "$SHA" ]; then
+            echo "error: no sha256 line at the end of the build output" >&2
+            exit 1
+          fi
+          cat > notes.md <<NOTES
+          KataGo $TAG built with the Metal backend for macOS arm64 (macOS 13 or newer).
+
+          - KataGo source tag: $TAG (https://github.com/lightvector/KataGo/releases/tag/$TAG)
+          - Build script: scripts/build-katago-metal.sh at commit $(git rev-parse HEAD) of this repository
+          - SHA-256 of the zip: $SHA
+
+          This is unmodified KataGo, built from source and distributed under KataGo's licence (the LICENSE file in the zip).
+          THIRD-PARTY-LICENSES.txt in the zip carries the licences of the statically linked protobuf and abseil, and of the other third-party components compiled into the binary.
+          NOTES
+          gh release create "katago-$TAG-metal" out/*.zip \
+            --title "KataGo $TAG (Metal, macOS arm64)" \
+            --notes-file notes.md
