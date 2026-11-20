@@ -130,6 +130,37 @@ jobs:
             --signature site/v1/manifest.json.minisig \
             --public-key keys/aji-manifest.pub
 
+      # Reads one file, runs nothing: the keys Aji ships at the ref the manifest was built from.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: reallxuan/Aji
+          ref: ${{ inputs.aji_ref }}
+          path: aji
+          persist-credentials: false
+          sparse-checkout: crates/aji-manager/src/manifest/keys.rs
+          sparse-checkout-cone-mode: false
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+
+      # A manifest signed by a key Aji does not trust would be refused by every copy of Aji.
+      - name: Verify against the keys Aji trusts
+        run: |
+          KEYS=$(grep -oE '"RW[A-Za-z0-9+/]{54}"' aji/crates/aji-manager/src/manifest/keys.rs | tr -d '"' || true)
+          if [ -z "$KEYS" ]; then
+            echo "::error::no minisign public key found in Aji's keys.rs"
+            exit 1
+          fi
+          for KEY in $KEYS; do
+            if minisign -V -P "$KEY" -m site/v1/manifest.json -x site/v1/manifest.json.minisig; then
+              exit 0
+            fi
+          done
+          echo "::error::the manifest is not signed by any key in Aji's TRUSTED_KEYS"
+          exit 1
+
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
