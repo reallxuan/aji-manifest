@@ -22,15 +22,17 @@ set -euo pipefail
 check_host() {
   [[ $(uname -m) == arm64 ]] || { echo "error: needs an arm64 Mac, found $(uname -m)" >&2; return 1; }
   local tool
-  for tool in cmake ninja pkg-config git zip codesign; do
+  for tool in cmake ninja pkg-config git zip codesign otool vtool; do
     command -v "$tool" > /dev/null || { echo "error: $tool is not on PATH" >&2; return 1; }
   done
 }
 
 # Fail unless the binary links only system libraries and targets macOS 13.0.
 check_binary() {
-  local bin=$1 bad
-  bad=$(otool -L "$bin" | tail -n +2 | awk '{print $1}' | grep -v -e '^/usr/lib/' -e '^/System/Library/' || true)
+  local bin=$1 linked bad
+  # Capture first so that a failing otool fails the check instead of reading as "no bad libraries".
+  linked=$(otool -L "$bin") || { echo "error: otool -L failed on $bin" >&2; return 1; }
+  bad=$(printf '%s\n' "$linked" | tail -n +2 | awk '{print $1}' | grep -v -e '^/usr/lib/' -e '^/System/Library/' || true)
   if [[ -n $bad ]]; then
     echo "error: $bin links libraries outside /usr/lib and /System/Library:" >&2
     echo "$bad" >&2
