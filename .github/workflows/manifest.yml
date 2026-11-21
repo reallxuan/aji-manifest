@@ -96,17 +96,13 @@ jobs:
             bundle/manifest.json.minisig
           if-no-files-found: error
 
-  # Verifies the signature with the generated binary (no secret in this job), then publishes.
-  deploy:
+  # Verifies the signature with the generated binary (no secret in this job), then uploads the
+  # site for the deploy job.
+  verify:
     needs: sign
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -161,11 +157,23 @@ jobs:
           echo "::error::the manifest is not signed by any key in Aji's TRUSTED_KEYS"
           exit 1
 
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
+
+  # Its own job, as in GitHub's Pages starter workflow: in the job that uploaded it, deploy-pages
+  # listed the run's artifacts before the upload showed up and failed twice in a row.
+  deploy:
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
       - name: Deploy to GitHub Pages
         id: deployment
